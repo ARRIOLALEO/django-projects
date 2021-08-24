@@ -1,14 +1,13 @@
 import os
 import sys
 from django.conf import settings
-from django.urls.resolvers import URLPattern
 
 DEBUG = os.environ.get("DEBUG", "on") == "on"
 
 SECRET_KEY = os.environ.get("SECRET_KEY", "kjhsdkfkjabdf4564#$%@#$")
 
 ALLOWED_HOST = os.environ.get("ALLOWED_HOST", "localhost").split(",")
-
+BASE_DIR = os.path.dirname(__file__)
 
 settings.configure(
     DEBUG=DEBUG,
@@ -20,25 +19,40 @@ settings.configure(
         "django.middleware.csrf.CsrfMiddleware",
         "django.middleware.clickjacking.XFrameOptionsMiddleware",
     ),
+    INSTALLED_APPS=(
+        'django.contrib.staticfiles',
+    ),
+    TEMPLATE_DIR=(
+        os.path.join(BASE_DIR,'templates')
+    ),
+    STATICFILES_DIRS=(
+        os.path.join(BASE_DIR,'static'),
+    ),
+    STATIC_URL='/static/',
 )
 
 import hashlib
 from django import forms
-from io import BytesIO
+from django.urls import reverse
 from PIL import Image, ImageDraw
 from django.conf.urls import url
+from django.shortcuts import render
 from django.core.cache import cache
 from django.core.wsgi import get_wsgi_application
 from django.http import HttpResponse, HttpResponseBadRequest
 from django.views.decorators.http import etag
 
 
-def index():
-    return HttpResponse("this is the main page of our aplication")
+def index(request):
+    example = reverse('placeholder',kwargs={'width':50, 'height':50})
+    context = {
+        'example': request.build_absolute_uri(example)
+    }
+    return  render(request,'home.html', context)
 
 
 class ImageForm(forms.Form):
-    """thi for it is for validate the request placeholder image"""
+    """validate the request placeholder image"""
 
     height = forms.IntegerField(min_value=1, max_value=2000)
     width = forms.IntegerField(min_value=1, max_value=2000)
@@ -54,13 +68,14 @@ class ImageForm(forms.Form):
             draw = ImageDraw.Draw(image)
             text = "{} x {}".format(width, height)
             textwidth, textheight = draw.textsize(text)
-        if textwidth < width and textheight < height:
-            texttop = (height - textheight) // 2
-            textleft = (width - textwidth) // 2
-            draw.text((textleft, texttop), text, fill=(255, 255, 255))
+            if textwidth < width and textheight < height:
+                texttop = (height - textheight) // 2
+                textleft = (width - textwidth) // 2
+                draw.text((textleft, texttop), text, fill=(255, 255, 255))
         content = BytesIO()
         image.save(content, image_format)
         content.seek(0)
+        cache.set(key,content,60 * 60)
         return content
 
 def generate_etag(request, width, height):
@@ -74,7 +89,7 @@ def placeholder(request, width, height):
         image = form.generate()
         return HttpResponse(image, content_type="image/png")
     else:
-        return HttpResponse("the image is not the right size")
+        return HttpResponseBadRequest("Invalid image request")
 
 
 application = get_wsgi_application()
